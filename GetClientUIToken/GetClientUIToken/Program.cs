@@ -26,7 +26,11 @@ namespace GetClientUIToken
             var options = new ChromeOptions();
             options.AddArguments("headless");
             options.AddArguments("window-size=1920,1080");
+            options.AddArguments("--log-level=3");
             var driver = new ChromeDriver(options);
+            Console.Clear();
+            Console.WriteLine($"Logging In");
+
             driver.Navigate().GoToUrl("https://qa-hedgecovest.pantheonsite.io/v3/dashboard");
 
             var wait = new WebDriverWait(driver, new TimeSpan(0, 0, 30));
@@ -44,14 +48,15 @@ namespace GetClientUIToken
 
             var submitButton = wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.XPath("//button[@type='submit']")));
             submitButton.Click();
-
+            Console.WriteLine($"Getting Token");
             driver.Navigate().GoToUrl("https://qa-hedgecovest.pantheonsite.io/v3/dashboard");
-            wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.CssSelector("#main-content-wrap > div > div > div > div > div > div > div > div.col-xs-12.explore-component > div:nth-child(1) > div > button")));
+            //wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.CssSelector("#main-content-wrap > div > div > div > div > div > div > div > div.col-xs-12.explore-component > div:nth-child(1) > div > button")));
 
+            
             var js = (IJavaScriptExecutor)driver;
             var authJsonString = (String)js.ExecuteScript("return localStorage.getItem('oidc.user:https://ids.svc.qa.smartx.us/:smartx-clientapi-webclient')");
             var authJson = JObject.Parse(authJsonString);
-            var token = authJson["id_token"].ToString();
+            var token = authJson["access_token"].ToString();
 
             OpenClipboard(IntPtr.Zero);
             var ptr = Marshal.StringToHGlobalUni(token);
