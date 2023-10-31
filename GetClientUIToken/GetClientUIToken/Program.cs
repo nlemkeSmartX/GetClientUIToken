@@ -3,6 +3,8 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Web;
 
 namespace GetClientUIToken
 {
@@ -17,7 +19,7 @@ namespace GetClientUIToken
         [DllImport("user32.dll")]
         internal static extern bool SetClipboardData(uint uFormat, IntPtr data);
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var settingsString = File.ReadAllText("settings.json");
             var settingsJson = JObject.Parse(settingsString);
@@ -32,41 +34,38 @@ namespace GetClientUIToken
             Console.WriteLine($"Logging In");
 
             driver.Navigate().GoToUrl("https://qa-hedgecovest.pantheonsite.io/v3/dashboard");
-
             var wait = new WebDriverWait(driver, new TimeSpan(0, 0, 30));
             wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.Id("Username")));
 
+            //  Enter Login Info
             var usernameInput = driver.FindElement(By.Id("Username"));
             usernameInput.SendKeys(settingsJson["Username"].ToString());
-
             var passwordInput = driver.FindElement(By.Id("Password"));
             passwordInput.SendKeys(settingsJson["Password"].ToString());
-
             var loginButton = driver.FindElement(By.Name("button"));
             loginButton.Click();
 
-
+            //  Skip mask as user
             var submitButton = wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.XPath("//button[@type='submit']")));
             submitButton.Click();
-            Console.WriteLine($"Getting Token");
-            driver.Navigate().GoToUrl("https://qa-hedgecovest.pantheonsite.io/v3/dashboard");
-            //wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.CssSelector("#main-content-wrap > div > div > div > div > div > div > div > div.col-xs-12.explore-component > div:nth-child(1) > div > button")));
 
-            
-            var js = (IJavaScriptExecutor)driver;
-            var authJsonString = (String)js.ExecuteScript("return localStorage.getItem('oidc.user:https://ids.svc.qa.smartx.us/:smartx-clientapi-webclient')");
-            var authJson = JObject.Parse(authJsonString);
-            var token = authJson["access_token"].ToString();
+            //  Strip out the access token from the callback url
+            WebDriverWait wait2 = new WebDriverWait(driver, TimeSpan.FromSeconds(60));
+            wait.Until(driver => driver.Url.Contains("id_token"));
+            var fullURLWithToken = HttpUtility.UrlDecode(driver.Url);
+            string idTokenPattern = @"(?<=access_token=)[^&]+";
+            Match match = Regex.Match(fullURLWithToken, idTokenPattern);
+            var token = match.Groups[0].Value;
+            Console.WriteLine($"Got Token");
 
+            //  Copy the token to the clipboard
             OpenClipboard(IntPtr.Zero);
             var ptr = Marshal.StringToHGlobalUni(token);
             SetClipboardData(13, ptr);
             CloseClipboard();
             Marshal.FreeHGlobal(ptr);
-            
-            driver.Quit();
-            Console.Clear();
 
+            driver.Quit();
             Console.WriteLine($"Token: {token}");
             Console.WriteLine("User Token copied to clipboard");
             Console.WriteLine("Press any key to exit...");
