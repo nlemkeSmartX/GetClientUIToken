@@ -1,4 +1,6 @@
 {
-  "Username": "testuser001",
-  "Password":  "Password123!"
+  "Username": "",
+  "Password": "",
+  "ClientID": "advisory-tools-qa-e2e",
+  "Secret": ""
 }
