@@ -1,10 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
-using OpenQA.Selenium.Support.UI;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
-using System.Web;
+using System.Text.Json;
 
 namespace GetClientUIToken
 {
@@ -19,44 +15,47 @@ namespace GetClientUIToken
         [DllImport("user32.dll")]
         internal static extern bool SetClipboardData(uint uFormat, IntPtr data);
 
-        public static async Task Main(string[] args)
+        private static async Task<string> GetAccessTokenAsync()
         {
             var settingsString = File.ReadAllText("settings.json");
             var settingsJson = JObject.Parse(settingsString);
+            
 
+            using var client = new HttpClient();
+            var url = "https://ids.svc.qa.smartx.us/connect/token";
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("username", settingsJson["Username"].ToString()),
+                new KeyValuePair<string, string>("password", settingsJson["Password"].ToString()),
+                new KeyValuePair<string, string>("grant_type", "password"),
+                new KeyValuePair<string, string>("client_id", settingsJson["ClientID"].ToString()),
+                new KeyValuePair<string, string>("client_secret", settingsJson["Secret"].ToString()),
+            });
 
-            var options = new ChromeOptions();
-            options.AddArguments("headless");
-            options.AddArguments("window-size=1920,1080");
-            options.AddArguments("--log-level=3");
-            var driver = new ChromeDriver(options);
-            Console.Clear();
-            Console.WriteLine($"Logging In");
+            var response = await client.PostAsync(url, content);
+            var responseString = await response.Content.ReadAsStringAsync();
 
-            driver.Navigate().GoToUrl("https://qa-hedgecovest.pantheonsite.io/v3/dashboard");
-            var wait = new WebDriverWait(driver, new TimeSpan(0, 0, 30));
-            wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.Id("Username")));
+            using var document = JsonDocument.Parse(responseString);
 
-            //  Enter Login Info
-            var usernameInput = driver.FindElement(By.Id("Username"));
-            usernameInput.SendKeys(settingsJson["Username"].ToString());
-            var passwordInput = driver.FindElement(By.Id("Password"));
-            passwordInput.SendKeys(settingsJson["Password"].ToString());
-            var loginButton = driver.FindElement(By.Name("button"));
-            loginButton.Click();
+            // Access the root element
+            var root = document.RootElement;
 
-            //  Skip mask as user
-            var submitButton = wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(By.XPath("//button[@type='submit']")));
-            submitButton.Click();
+            // Check if the property exists
+            if (root.TryGetProperty("access_token", out JsonElement tokenElement))
+            {
+                // Extract the string value
+                string accessToken = tokenElement.GetString();
+                return accessToken;
+            }
+            else
+            {
+                throw new Exception("Property 'access_token' not found in JSON.");
+            }
+        }
 
-            //  Strip out the access token from the callback url
-            WebDriverWait wait2 = new WebDriverWait(driver, TimeSpan.FromSeconds(60));
-            wait.Until(driver => driver.Url.Contains("id_token"));
-            var fullURLWithToken = HttpUtility.UrlDecode(driver.Url);
-            string idTokenPattern = @"(?<=access_token=)[^&]+";
-            Match match = Regex.Match(fullURLWithToken, idTokenPattern);
-            var token = match.Groups[0].Value;
-            Console.WriteLine($"Got Token");
+        public static async Task Main(string[] args)
+        {
+            var token = await GetAccessTokenAsync();
 
             //  Copy the token to the clipboard
             OpenClipboard(IntPtr.Zero);
@@ -65,7 +64,6 @@ namespace GetClientUIToken
             CloseClipboard();
             Marshal.FreeHGlobal(ptr);
 
-            driver.Quit();
             Console.WriteLine($"Token: {token}");
             Console.WriteLine("User Token copied to clipboard");
             Console.WriteLine("Press any key to exit...");
